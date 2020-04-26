@@ -1,34 +1,28 @@
 package com.creatricxz.remote.utility
 
-enum class InputType(var type: String) {
-    REMOTE("RCU"),
-    KEYBOARD("KEYBOARD"),
-    MOUSE("MOUSE")
+enum class PayloadType(var type: Int) {
+    RCU(0x01),
+    ACU(0x02),
 }
 
-enum class PayloadType(var type: Int) {
+enum class PayloadDataType(var type: Int) {
     TEXT(0x01),
     BINARY(0x02),
 }
 
-enum class Remote(var value: Int) {
-    PAYLOAD_TYPE(0x01),
-    DATA_TYPE(0x02),
-    RESERVED(0x00),
+enum class InputPayloadType(var type: Int) {
     KEYBOARD(0x01),
     MOUSE(0x02)
 }
 
-enum class Keyboard(var value: Int) {
-    LENGTH(0x00000004),
-    KEYBOARD_TYPE(0x01),
-    KEYCODE(0x01)
+object PayloadLength{
+    var KEYBOARD = 0x04
+    var MOUSE = 0x04
+    var HEADER = 0x08
 }
 
-enum class Mouse(var value: Int) {
-    LENGTH(0x00000006),
-    MOUSE_TYPE(-0x01),
-    MOUSE_MOVE(0x01),
-    MOUSE_LEFT_CLICK(0x00),
-    MOUSE_RIGHT_CLICK(0x01)
+enum class MouseAction(var value: Int) {
+    MOVE(-0x01),
+    LEFT_CLICK(0x01),
+    RIGHT_CLICK(0x02)
 }

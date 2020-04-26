@@ -1,7 +1,6 @@
 package com.creatricxz.remote
 
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.SharedPreferences.Editor
@@ -13,16 +12,15 @@ import android.util.Log
 import android.view.*
 import android.view.ContextMenu.ContextMenuInfo
 import android.view.KeyEvent.*
-import android.view.View.OnLongClickListener
 import android.view.View.OnTouchListener
 import android.view.ViewConfiguration.getTapTimeout
 import android.view.inputmethod.InputMethodManager
-import android.widget.CompoundButton
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 import com.creatricxz.remote.settings.SettingsActivity
+import com.creatricxz.remote.utility.*
 import com.neovisionaries.ws.client.WebSocket
 import com.neovisionaries.ws.client.WebSocketAdapter
 import com.neovisionaries.ws.client.WebSocketFactory
@@ -30,7 +28,6 @@ import com.neovisionaries.ws.client.WebSocketFrame
 import io.reactivex.Observable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
-
 import java.io.IOException
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -77,118 +74,48 @@ open class MainActivity : AppCompatActivity() {
     protected var timer: Handler = Handler()
     var mWebSocket: WebSocket? = null
 
+    private var width: Int = 0
+    private var height: Int = 0
+
+
     // Activity lifecycle.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Inflate our UI from its XML layout description.
         setContentView(R.layout.activity_main)
+        initListener()
+        getDeviceWidth()
+    }
+
+    private fun getDeviceWidth() {
+        width = this.getResources().getDisplayMetrics().widthPixels;
+        height = this.getResources().getDisplayMetrics().heightPixels;
+        Log.d(LOG_TAG, "width " + width + " height " + height);
+    }
+
+    private fun initListener() {
         // Set touchpad events.
         touchpad!!.setOnTouchListener(mTouchListener)
         // Set keyboard events.
         keyboard!!.setOnClickListener(mKeyboardListener)
         keyboard!!.setOnKeyListener(mKeyListener)
-        key_shift!!.setOnCheckedChangeListener { compoundButton, checked ->
-            if (checked) sendKeyDown(
-                KEYCODE_SHIFT_LEFT.toShort(),
-                0.toShort()
-            ) else sendKeyUp(KEYCODE_SHIFT_LEFT.toShort(), 0.toShort())
-        }
-        key_ctrl!!.setOnCheckedChangeListener { compoundButton, checked ->
-            if (checked) sendKeyDown(
-                113.toShort(),
-                0.toShort()
-            ) else sendKeyUp(113.toShort(), 0.toShort())
-        }
-        key_alt!!.setOnCheckedChangeListener { compoundButton, checked ->
-            if (checked) sendKeyDown(
-                KEYCODE_ALT_LEFT.toShort(),
-                0.toShort()
-            ) else sendKeyUp(KEYCODE_ALT_LEFT.toShort(), 0.toShort())
-        }
 
-
-        // Set mouse button events.
-        button0!!.setOnCheckedChangeListener(mButton0ToggleListener)
-        button0!!.setOnLongClickListener(mButton0ClickListener)
-        button1!!.setOnCheckedChangeListener(mButton1ToggleListener)
-        button1!!.setOnLongClickListener(mButton1ClickListener)
-        // Set media button events.
-
-        prevtrack.setOnClickListener {
-            sendKeyPress(KEYCODE_MEDIA_PREVIOUS.toShort(), 0.toShort())
-        }
-
-        playpause.setOnClickListener {
-            sendKeyPress(KEYCODE_MEDIA_PLAY_PAUSE.toShort(), 0.toShort())
-        }
-
-        nexttrack.setOnClickListener {
-            sendKeyPress(KEYCODE_MEDIA_NEXT.toShort(), 0.toShort())
-        }
-
-        stop.setOnClickListener {
-            sendKeyPress(KEYCODE_MEDIA_STOP.toShort(), 0.toShort())
-        }
-
-        volumemute.setOnClickListener {
-            sendKeyPress(KEYCODE_MUTE.toShort(), 0.toShort())
-        }
-
-        volumedown.setOnClickListener {
-            for (i in 0..2) sendKeyPress(
-                KEYCODE_VOLUME_DOWN.toShort(),
-                0.toShort()
-            )
-        }
-        volumedown.setOnLongClickListener {
-            sendKeyPress(KEYCODE_VOLUME_DOWN.toShort(), 0.toShort())
-            true
-        }
-
-        volumeup.setOnClickListener {
-            for (i in 0..2) sendKeyPress(
-                KEYCODE_VOLUME_UP.toShort(),
-                0.toShort()
-            )
-        }
-
-        volumeup.setOnLongClickListener {
-            sendKeyPress(KEYCODE_VOLUME_UP.toShort(), 0.toShort())
-            true
-        }
-
-        // Set browser button events.
-        browsehome.setOnClickListener {
-            sendKeyPress(KEYCODE_HOME.toShort(), 0.toShort())
-        }
-
-        browseforward.setOnClickListener {
-            sendKeyPress(125.toShort(), 0.toShort())
-        }
-
-        browseback.setOnClickListener {
-            sendKeyPress(KEYCODE_BACK.toShort(), 0.toShort())
-        }
         // Set up preferences.
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false)
-        // If there is no server to reconnect, set the background to bad.
-        val preferences: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val to = preferences.getString("Server", null)
-        if (to == null) touchpad.setImageResource(R.drawable.background_bad)
+
     }
 
     override fun onResume() {
         super.onResume()
-        // Restore settings.
+
+        // If there is no server to reconnect, set the background to bad.
         val preferences: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        Port = try {
-            preferences.getString(
-                "Port",
-                Integer.toString(DefaultPort)
-            )!!.toInt().toShort()
-        } catch (ex: NumberFormatException) {
-            DefaultPort.toShort()
-        }
+        val to = preferences.getString("Server", null)
+        if (to == null)
+            touchpad.setImageResource(R.drawable.background_bad)
+        else
+            reconnect()
+
         Sensitivity = preferences.getInt("Sensitivity", 50).toFloat() / 25.0f + 0.1f
         MultitouchMode = try {
             preferences.getString("MultitouchMode", "0")!!.toInt()
@@ -200,30 +127,8 @@ open class MainActivity : AppCompatActivity() {
             preferences.getBoolean("EnableScrollBar", preferences.getBoolean("EnableScroll", true))
         ScrollBarWidth = preferences.getInt("ScrollBarWidth", 20)
         EnableSystem = preferences.getBoolean("EnableSystem", true)
-        val EnableMouseButtons = preferences.getBoolean("EnableMouseButtons", true)
-        val EnableModifiers = preferences.getBoolean("EnableModifiers", false)
-        var Toolbar = 0
-        try {
-            Toolbar = preferences.getString("Toolbar", "0")!!.toInt()
-        } catch (ex: NumberFormatException) {
-        }
-        // Show/hide the mouse buttons.
-        if (EnableMouseButtons) mousebuttons!!.visibility =
-            View.VISIBLE else mousebuttons!!.visibility =
-            View.GONE
-        // Show/hide the modifier keys.
-        if (EnableModifiers) modifiers.setVisibility(View.VISIBLE) else modifiers.setVisibility(View.GONE)
-        // Show/hide media toolbar.
-        if (Toolbar == 1) media!!.visibility = View.VISIBLE else media!!.visibility = View.GONE
-        // Show/hide browser toolbar.
-        if (Toolbar == 2) browser.setVisibility(View.VISIBLE) else browser.setVisibility(View.GONE)
-        timer.postDelayed(mKeepAliveListener, KeepAlive.toLong())
-    }
 
-    override fun onPause() {
-        timer.removeCallbacks(mKeepAliveListener)
-        //disconnect(true)
-        super.onPause()
+        //timer.postDelayed(mKeepAliveListener, KeepAlive.toLong())
     }
 
     // Mouse actions.
@@ -254,7 +159,7 @@ open class MainActivity : AppCompatActivity() {
         }
 
         open fun onUp(e: MotionEvent): Boolean {
-            if (isClick(e)) onClick()
+            if (isClick(e)) onClick(e)
             return true
         }
 
@@ -276,14 +181,13 @@ open class MainActivity : AppCompatActivity() {
             return true
         }
 
-        open fun cancel(e: MotionEvent?): Boolean {
+        open fun cancel(e: MotionEvent): Boolean {
             return false
         }
 
         open fun onMoveDelta(dx: Float, dy: Float) {}
-        open fun onClick() {}
+        open fun onClick(e: MotionEvent) {}
     }
-
 
     inner class MoveAction : Action() {
 
@@ -291,12 +195,11 @@ open class MainActivity : AppCompatActivity() {
             sendMove(dx, dy)
         }
 
-        override fun onClick() {
-            if (button0.isChecked) button0.toggle()
-            sendClick(0)
+        override fun onClick(e: MotionEvent) {
+            sendClick(e)
         }
 
-        override fun cancel(e: MotionEvent?): Boolean {
+        override fun cancel(e: MotionEvent): Boolean {
             return true
         }
     }
@@ -325,9 +228,8 @@ open class MainActivity : AppCompatActivity() {
             sendScroll2(dx, -2.0f * dy)
         }
 
-        override fun onClick() {
-            if (button1.isChecked) button1.toggle()
-            sendClick(1)
+        override fun onClick(e: MotionEvent) {
+            sendClick(e)
         }
     }
 
@@ -350,9 +252,10 @@ open class MainActivity : AppCompatActivity() {
             sendMove(dx, dy)
         }
 
-        override fun onClick() {
-            sendClick(1)
+        override fun onClick(e: MotionEvent) {
+            sendClick(e)
         }
+
     }
 
     // Mouse listeners.
@@ -402,29 +305,6 @@ open class MainActivity : AppCompatActivity() {
             }
         }
     }
-    var mButton0ToggleListener: CompoundButton.OnCheckedChangeListener =
-        object : CompoundButton.OnCheckedChangeListener {
-            override fun onCheckedChanged(cb: CompoundButton?, on: Boolean) {
-                if (on) sendDown(0) else sendUp(0)
-            }
-        }
-    var mButton0ClickListener = OnLongClickListener {
-        if (button0!!.isChecked) button0!!.toggle()
-        sendClick(0)
-        sendClick(0)
-        true
-    }
-    var mButton1ToggleListener: CompoundButton.OnCheckedChangeListener =
-        object : CompoundButton.OnCheckedChangeListener {
-            override fun onCheckedChanged(cb: CompoundButton?, on: Boolean) {
-                if (on) sendDown(1) else sendUp(1)
-            }
-        }
-    var mButton1ClickListener = OnLongClickListener {
-        if (button1!!.isChecked) button1!!.toggle()
-        sendClick(1)
-        true
-    }
 
     // Keyboard listener.
     var mKeyboardListener: View.OnClickListener = object : View.OnClickListener {
@@ -464,19 +344,33 @@ open class MainActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (ignoreKeyEvent(event)) return super.onKeyDown(keyCode, event)
+        if (ignoreKeyEvent(event))
+            return super.onKeyDown(keyCode, event)
         val c = event.unicodeChar
-        if (c == 0 || Character.isISOControl(c) || key_shift!!.isChecked || key_ctrl.isChecked() || key_alt.isChecked()) sendKeyPress(
-            event.keyCode.toShort(),
+
+        if (c == 0 || Character.isISOControl(c)) {
+            event.keyCode.toShort()
             event.metaState.toShort()
-        ) else sendChar(c.toChar())
+        } else {
+            Log.e("onKeyDown ", "Keycode "+event.keyCode.toShort() +" MetaState "+  event.metaState.toShort())
+            Log.e("onKeyDown ", "DisplayLabel: " + event.displayLabel)
+            Log.e("onKeyDown ", "number: " + event.number)
+            Log.e("onKeyDown ", "ScanCode: " + event.scanCode)
+            Log.e("onKeyDown ", "getUnicodeChar: " + event.getUnicodeChar())
+            Log.e("onKeyDown ", "unicodeChar: " + event.unicodeChar)
+            Log.e("onKeyDown ", "KeyCode: " + event.keyCode)
+            Log.e("onKeyDown ", "KeyCode: " + keyCode)
+            Log.e("onKeyDown ", "Char: " + c.toChar())
+            Log.e("onKeyDown ", "Modifier: " + event.modifiers)
+            sendChar(event.keyCode.toShort(), event.metaState)
+        }
         return true
     }
 
     override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean {
         if (keyCode == KEYCODE_UNKNOWN) {
             val s = event.characters
-            for (i in 0 until s.length) sendChar(s[i])
+            //for (i in 0 until s.length) sendChar(s[i], keyCode)
         } else {
             for (i in 0 until repeatCount) onKeyDown(keyCode, event)
         }
@@ -506,24 +400,29 @@ open class MainActivity : AppCompatActivity() {
         return connect(to, 0)
     }
 
-    protected fun connect(to: String, password: Int): Boolean {
+    private fun connect(to: String, password: Int): Boolean {
         return connectIOSocket(to)
     }
 
-    fun connectIOSocket(to: String): Boolean {
+    private fun connectIOSocket(to: String): Boolean {
         Observable.just("Hello World")
             .subscribeOn(Schedulers.newThread())
             .observeOn(Schedulers.newThread())
-            .subscribe { smth ->
-                testWSS(to) // !!! must be not on the MainThread
-            }
+            .subscribe(
+                { Success ->
+                    connectWSS(to)
+                },
+                { throwable ->
+                    Log.e("WSS Error", throwable.message)
+                }
+            )
 
         return true
     }
 
-    private fun testWSS(to : String) {
+    private fun connectWSS(to: String) {
         // Create a WebSocket with a socket connection timeout value.
-        mWebSocket = WebSocketFactory().createSocket("ws://"+ to, 5000)
+        mWebSocket = WebSocketFactory().createSocket("ws://" + to, 5000)
 
         // Register a listener to receive WebSocket events.
         mWebSocket!!.addListener(object : WebSocketAdapter() {
@@ -548,8 +447,6 @@ open class MainActivity : AppCompatActivity() {
         })
 
         mWebSocket!!.connect()
-        //mWebSocket!!.sendText("hello !")
-        //ws.disconnect()
     }
 
     protected fun disconnect() {
@@ -660,16 +557,20 @@ open class MainActivity : AppCompatActivity() {
             }
             true
         } else if (item.itemId === SERVER_CUSTOM_ID) { // Prompt user for server to connect to.
+            val preferences: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+            val serverUrl = preferences.getString("Server", null)
             val alert: AlertDialog.Builder = AlertDialog.Builder(this)
             val to = EditText(this)
             to.inputType = InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+            to.setText(serverUrl)
             alert.setTitle(R.string.customserver_title)
             alert.setMessage(R.string.customserver_message)
             alert.setView(to)
-            alert.setPositiveButton(R.string.ok_connect,
-                DialogInterface.OnClickListener { dialog, whichButton -> connect(to.text.toString()) })
-            alert.setNegativeButton(R.string.cancel,
-                DialogInterface.OnClickListener { dialog, whichButton -> })
+            alert.setPositiveButton(R.string.ok_connect) { dialog, whichButton ->
+                connect(to.text.toString())
+                preferences.edit().putString("Server", to.text.toString()).commit()
+            }
+            alert.setNegativeButton(R.string.cancel, { dialog, whichButton -> })
             alert.show()
             true
         } else if (item.itemId === FIND_SERVERS_ID) {
@@ -775,47 +676,96 @@ open class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createMessageHeader(
+        writer: ByteBuffer,
+        payloadType: PayloadType,
+        dataType: PayloadDataType,
+        reserved1: Int,
+        reserved2: Int,
+        payloadLen: Int
+    ) {
+        writer.put(payloadType.type.toByte())
+        writer.put(dataType.type.toByte())
+        writer.put(reserved1.toByte())
+        writer.put(reserved2.toByte())
+        writer.putInt(payloadLen)
+    }
+
     // Mouse packets.
     protected fun sendMove(dx: Float, dy: Float) {
-        val buffer = ByteArray(5)
+
+        val buffer = ByteArray(PayloadLength.HEADER + PayloadLength.MOUSE)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Move packet.
-        writer.put(0x11.toByte())
+        //writer.put(0x11.toByte())
+        createMessageHeader(
+            writer,
+            PayloadType.RCU,
+            PayloadDataType.BINARY,
+            0x00,
+            0x00,
+            PayloadLength.MOUSE
+        )
+
+        writer.put(InputPayloadType.MOUSE.type.toByte())
+        writer.put(MouseAction.MOVE.value.toByte())
         writer.put(floatToByte(dx))
         writer.put(floatToByte(dy))
+
         sendPacket(buffer)
     }
 
     protected fun sendDown(button: Int) {
-        val buffer = ByteArray(5)
+        val buffer = ByteArray(PayloadLength.HEADER + PayloadLength.MOUSE)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Down packet.
-        writer.put(0x12.toByte())
-        writer.put(button.toByte())
+        //writer.put(0x12.toByte())
+        createMessageHeader(
+            writer,
+            PayloadType.RCU,
+            PayloadDataType.BINARY,
+            0x00,
+            0x00,
+            PayloadLength.MOUSE
+        )
+
+        writer.put(InputPayloadType.MOUSE.type.toByte())
+        writer.put(button.toByte()) //left or right click
+        writer.put(0x00.toByte())
+        writer.put(0x00.toByte())
+        Log.e(LOG_TAG, String(buffer))
         sendPacket(buffer)
     }
 
     protected fun sendUp(button: Int) {
         val buffer = ByteArray(5)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Down packet.
         writer.put(0x13.toByte())
         writer.put(button.toByte())
         sendPacket(buffer)
     }
 
-    protected fun sendClick(button: Int) {
-        sendDown(button)
-        sendUp(button)
+    protected fun sendClick(button: MotionEvent) {
+        var finalClick: Int;
+        var leftOrRightClick = button.getRawX();
+        if (width / 2 < leftOrRightClick)
+            finalClick = MouseAction.RIGHT_CLICK.value;
+        else
+            finalClick = MouseAction.LEFT_CLICK.value;
+
+        Log.d("RIghtLEft", "" + (width / 2) + " < " + leftOrRightClick);
+
+        sendDown(finalClick);
     }
 
     protected fun sendScroll(d: Float) {
         val buffer = ByteArray(5)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Move packet.
         writer.put(0x16.toByte())
         writer.put(floatToByte(d))
@@ -825,7 +775,7 @@ open class MainActivity : AppCompatActivity() {
     protected fun sendScroll2(dx: Float, dy: Float) {
         val buffer = ByteArray(5)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Move packet.
         writer.put(0x17.toByte())
         writer.put(floatToByte(dx))
@@ -833,59 +783,34 @@ open class MainActivity : AppCompatActivity() {
         sendPacket(buffer)
     }
 
-    // Keyboard packets.
-    fun sendKey(
-        control: Byte,
-        code: Short,
-        flags: Short
-    ) {
-        val buffer = ByteArray(5)
+    private fun sendChar(keycode: Short, meta: Int) {
+
+        val buffer = ByteArray(PayloadLength.HEADER + PayloadLength.KEYBOARD)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
-        // Move packet.
-        writer.put(control)
-        writer.putShort(code)
-        writer.putShort(flags)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 8 Byte Header
+        createMessageHeader(
+            writer,
+            PayloadType.RCU,
+            PayloadDataType.BINARY,
+            0x00,
+            0x00,
+            PayloadLength.KEYBOARD
+        )
+
+        // 4 Byte Payload
+        writer.put(InputPayloadType.KEYBOARD.type.toByte())
+        writer.put(meta.toByte())
+        writer.putShort(keycode)
+
         sendPacket(buffer)
-    }
-
-    fun sendKeyPress(code: Short, flags: Short) {
-        sendKey(0x21.toByte(), code, flags)
-    }
-
-    fun sendKeyDown(code: Short, flags: Short) {
-        sendKey(0x22.toByte(), code, flags)
-    }
-
-    fun sendKeyUp(code: Short, flags: Short) {
-        sendKey(0x23.toByte(), code, flags)
-    }
-
-    fun sendChar(code: Char) {
-        val buffer = ByteArray(5)
-        val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
-        // Move packet.
-        writer.put(0x20.toByte())
-        writer.putChar(code)
-        sendPacket(buffer)
-    }
-
-    // Connection packets.
-    protected fun sendConnect(password: Int, silent: Boolean ) {
-        val buffer = ByteArray(5)
-        val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
-        // Move packet.
-        if (silent) writer.put(0x05.toByte()) else writer.put(0x00.toByte())
-        writer.putInt(password)
-        sendPacket(buffer, false, true)
     }
 
     protected fun sendDisconnect(silent: Boolean) {
         val buffer = ByteArray(5)
         val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
+        writer.order(ByteOrder.LITTLE_ENDIAN)
         // Move packet.
         if (silent) writer.put(0x04.toByte()) else writer.put(0x01.toByte())
         sendPacket(buffer, false, false)
@@ -893,16 +818,6 @@ open class MainActivity : AppCompatActivity() {
 
     // Keep alive packet.
     protected var nullCount = 0
-
-    protected fun sendNull() {
-        val buffer = ByteArray(5)
-        val writer: ByteBuffer = ByteBuffer.wrap(buffer)
-        writer.order(ByteOrder.BIG_ENDIAN)
-        writer.put(0xFF.toByte())
-        writer.putInt(nullCount)
-        nullCount++
-        sendPacket(buffer)
-    }
 
     // Show error dialog
     protected fun showErrorDialog(message: String?) {
